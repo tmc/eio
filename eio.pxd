@@ -7,10 +7,25 @@ cdef extern from "sys/types.h":
 ctypedef int mode_t
 
 cdef extern from "eio.h":
+
     cdef struct eio_req:
       ssize_t result # result of syscall, e.g. result = read (... 
       int type        # EIO_xxx constant ETP
-      void *data
+      char *data
+
+#cdef class EioRequest:
+#
+#    cdef eio_req req
+#
+#    def __init__(self, req):
+#        self.req = req
+#
+#    def describe(self):
+#        import pdb; pdb.set_trace()
+#        print "This shrubbery is", self.width, \
+#            "by", self.height, "cubits."
+
+cdef extern from "eio.h":
 
     cdef struct eio_dirent
     ctypedef int (*eio_cb)(eio_req *req)
@@ -19,8 +34,13 @@ cdef extern from "eio.h":
     ctypedef void (*callback)()
     
     int eio_init (void *want_poll, void *done_poll)
-
     int eio_poll ()
+
+    unsigned int eio_nreqs    () # number of requests in-flight
+    unsigned int eio_nready   () # number of not-yet handled requests
+    unsigned int eio_npending () # number of finished but unhandled requests
+    unsigned int eio_nthreads () # number of worker threads in use currently
+
 
     eio_req *eio_nop       (int pri, eio_cb cb, void *data) # does nothing except go through the whole process 
     eio_req *eio_busy      (eio_tstamp delay, int pri, eio_cb cb, void *data) # ties a thread for this long, simulating busyness
@@ -62,6 +82,7 @@ cdef extern from "eio.h":
     eio_req *eio_symlink   (char *path, char *new_path, int pri, eio_cb cb, void *data)
     eio_req *eio_rename    (char *path, char *new_path, int pri, eio_cb cb, void *data)
     eio_req *eio_custom    (eio_cb execute, int pri, eio_cb cb, void *data)
+
 
 cdef inline ssize_t EIO_RESULT(eio_req *req): # tc was w/o *
     return req.result
