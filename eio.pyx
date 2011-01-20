@@ -1,7 +1,37 @@
 from eio cimport *
 
+#eio_req *eio_nop       (int pri, eio_cb cb, void *data); /* does nothing except go through the whole process */
+#ctypedef void eio_cb
+
+cdef class EioRequest:
+    cdef eio_req *req_data
+    
+    def __init__(self):
+        print 'EioRequest init'
+        
+    cdef set_data(self, eio_req* data):
+        print 'EioRequest set data'
+        #print data.type
+
+
+def nop(pri, cb=None, data=None):
+    cdef eio_req *r
+    cdef EioRequest mreq
+    #r = eio_nop(pri, <eio_cb><void *>cb, <void *>data)
+    r = eio_nop(pri, status_callback, <void *>data)
+    
+    #mreq.set_data(r)
+    return mreq
+
+cdef void _want_poll():
+    print '_want poll!!!!!!!!!!!'
+
+cdef void _want_poll():
+    print 'done poll!!!!!!!'
+
 def init(want_poll=None, done_poll=None):
-    return eio_init(<void*>want_poll, <void*>done_poll)
+    #return eio_init(<void*>want_poll, <void*>done_poll)
+    return eio_init(_want_poll, _done_poll)
 
 cdef int status_callback (eio_req *req):
     print 'callback', req.data
@@ -16,9 +46,10 @@ cdef int status_callback (eio_req *req):
 #aio_mkdir $pathname, $mode, $callback->($status)
 #    eio_req *eio_mkdir     (char *path, mode_t mode, int pri, eio_cb cb, void *data)
 
-def mkdir(path, mode=0777, callback=None):
+def mkdir(path, mode=0777, pri=0, cb=None, data=None):
     cdef eio_req *r
-    r = eio_mkdir(path, <mode_t>mode, 0, status_callback, <void*>callback);
+    #r = eio_mkdir(path, <mode_t>mode, pri, <eio_cb><void *>cb, <void*>data);
+    r = eio_mkdir(path, <mode_t>mode, pri, status_callback, <void*>data);
 
 def rmdir(path, callback=None):
     cdef eio_req *r

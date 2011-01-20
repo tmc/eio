@@ -1,5 +1,5 @@
 #import pyximport; pyximport.install()
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
 
 import eio
 import time
@@ -18,7 +18,6 @@ def done_callback():
     print 'Done Called!'
 
 print 'init', eio.init(want_callback, done_callback)
-
 
 def mkdir_cb(foo):
     print 'mkdir callback', foo
