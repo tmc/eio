@@ -13,27 +13,16 @@ cdef extern from "eio.h":
       int type        # EIO_xxx constant ETP
       char *data
 
-#cdef class EioRequest:
-#
-#    cdef eio_req req
-#
-#    def __init__(self, req):
-#        self.req = req
-#
-#    def describe(self):
-#        import pdb; pdb.set_trace()
-#        print "This shrubbery is", self.width, \
-#            "by", self.height, "cubits."
-
 cdef extern from "eio.h":
 
     cdef struct eio_dirent
     ctypedef int (*eio_cb)(eio_req *req)
     ctypedef double eio_tstamp
 
-    ctypedef void (*callback)()
-    
-    int eio_init (void *want_poll, void *done_poll)
+    #ctypedef void (*callback)()
+    #int eio_init (void *want_poll, void *done_poll)
+    #int eio_init (callback want_poll, callback done_poll)
+    int eio_init (void (*want_poll)(), void (*done_poll)())
     int eio_poll ()
 
     unsigned int eio_nreqs    () # number of requests in-flight

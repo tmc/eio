@@ -10,5 +10,7 @@ setup(
     ext_modules = [Extension('eio',
                              sourcefiles,
                              libraries = ['eio'],
+                             pyrex_gdb = 1,
+                             line_directives = 1,
                             )]
 )

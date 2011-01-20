@@ -1,3 +1,7 @@
+"""
+porting of libeio's demo.c
+"""
+
 import os
 import select
 ##include <stdio.h>
@@ -24,6 +28,7 @@ def want_poll():
 #  printf ("want_poll ()\n");
     print 'want_poll ()'
     os.write(respipe[1], ' ')
+    print 'done want_poll ()'
 #  write (respipe [1], &dummy, 1);
 #}
 #
@@ -35,6 +40,7 @@ def done_poll():
 #  printf ("done_poll ()\n");
     print 'done_poll ()'
     os.read(respipe[0], 1)
+    print 'done done_poll ()'
 #  read (respipe [0], &dummy, 1);
 #}
 #
@@ -52,9 +58,12 @@ def event_loop():
 #  printf ("\nentering event loop\n");
     print 'entering event loop'
 #  while (eio_nreqs ())
+    print 'a'
     while eio.nreqs():
+        print 'b'
 #    {
 #      poll (&pfd, 1, -1);
+        print 'c'
         print 'xx', p.poll()
 #      printf ("eio_poll () = %d\n", eio_poll ());
         print 'eio_poll () = %d' % eio.poll()
@@ -73,6 +82,7 @@ def res_cb(req):
 #  if (req->result < 0)
 #    abort ();
     if req.result < 0:
+        print 'XXX', 'bad result, aborting'
         os.abort()
 #
 #  return 0;
@@ -152,15 +162,16 @@ if __name__ == '__main__':
     print 'eio_init ()'
 #  if (eio_init (want_poll, done_poll)) abort ();
     if eio.init(want_poll, done_poll):
+        print 'XXX', 'init failed, aborting'
         os.abort()
 #
 #  do
 #    {
 #      /* avoid relative paths yourself(!) */
 #      eio_mkdir ("eio-test-dir", 0777, 0, res_cb, "mkdir");
-    eio.mkdir('eio-test-dir', 0777, 0, res_cb, 'mkdir')
+    eio.mkdir('eio-test-dir', 0777)
 #      eio_nop (0, res_cb, "nop");
-    eio.nop(0, res_cb, 'nop')
+    eio.nop()
 #      event_loop ();
     event_loop()
 #
