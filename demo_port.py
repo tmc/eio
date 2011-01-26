@@ -160,8 +160,10 @@ if __name__ == '__main__':
 #
 #  printf ("eio_init ()\n");
     print 'eio_init ()'
+
 #  if (eio_init (want_poll, done_poll)) abort ();
     if eio.init(want_poll, done_poll):
+#    if eio.init():
         print 'XXX', 'init failed, aborting'
         os.abort()
 #
@@ -169,10 +171,26 @@ if __name__ == '__main__':
 #    {
 #      /* avoid relative paths yourself(!) */
 #      eio_mkdir ("eio-test-dir", 0777, 0, res_cb, "mkdir");
-    eio.mkdir('eio-test-dir', 0777)
+    #eio.mkdir('eio-test-dir', 0777)
 #      eio_nop (0, res_cb, "nop");
+    print 'nop1'
     eio.nop()
+    print 'nop2'
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.nop()
+    eio.mkdir('eio-test-dir2', 0777)
 #      event_loop ();
+    print 'event loop'
     event_loop()
 #
 #      eio_stat ("eio-test-dir", 0, stat_cb, "stat");
@@ -235,3 +253,4 @@ if __name__ == '__main__':
 #  return 0;
 #}
 #
+print 'normally exiting'
