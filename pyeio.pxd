@@ -23,12 +23,14 @@ cdef extern from "eio.h":
     #int eio_init (void *want_poll, void *done_poll)
     #int eio_init (callback want_poll, callback done_poll)
     int eio_init (void (*want_poll)(), void (*done_poll)())
-    int eio_poll ()
+    int eio_poll () nogil
 
     unsigned int eio_nreqs    () # number of requests in-flight
     unsigned int eio_nready   () # number of not-yet handled requests
     unsigned int eio_npending () # number of finished but unhandled requests
     unsigned int eio_nthreads () # number of worker threads in use currently
+
+    void eio_set_max_poll_reqs (unsigned int nreqs)
 
 
     eio_req *eio_nop       (int pri, eio_cb cb, void *data) # does nothing except go through the whole process 
@@ -58,9 +60,9 @@ cdef extern from "eio.h":
     eio_req *eio_truncate  (char *path, off_t offset, int pri, eio_cb cb, void *data)
     eio_req *eio_chown     (char *path, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
     eio_req *eio_chmod     (char *path, mode_t mode, int pri, eio_cb cb, void *data)
-    eio_req *eio_mkdir     (char *path, mode_t mode, int pri, eio_cb cb, void *data)
+    eio_req *eio_mkdir     (char *path, mode_t mode, int pri, eio_cb cb, void *data) nogil
     eio_req *eio_readdir   (char *path, int flags, int pri, eio_cb cb, void *data) # result=ptr2 allocated dynamically
-    eio_req *eio_rmdir     (char *path, int pri, eio_cb cb, void *data)
+    eio_req *eio_rmdir     (char *path, int pri, eio_cb cb, void *data) nogil
     eio_req *eio_unlink    (char *path, int pri, eio_cb cb, void *data)
     eio_req *eio_readlink  (char *path, int pri, eio_cb cb, void *data) # result=ptr2 allocated dynamically
     eio_req *eio_stat      (char *path, int pri, eio_cb cb, void *data) # stat buffer=ptr2 allocated dynamically

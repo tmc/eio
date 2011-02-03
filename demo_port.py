@@ -2,6 +2,15 @@
 porting of libeio's demo.c
 """
 
+def print_stats():
+    print 'stats'
+    print 'num reqs:\t', eio.nreqs()
+    print 'num ready:\t', eio.nready()
+    print 'num pending:\t', eio.npending()
+    print 'num threads:\t', eio.nthreads()
+
+
+
 import os
 import select
 ##include <stdio.h>
@@ -15,7 +24,7 @@ import select
 ##include <sys/stat.h>
 #
 ##include "eio.h"
-import eio
+import pyeio as eio
 #
 #int respipe [2];
 respipe = []
@@ -63,9 +72,9 @@ def event_loop():
         print 'b'
 #    {
 #      poll (&pfd, 1, -1);
-        print 'c'
-        print 'xx', p.poll()
+        p.poll(1000)
 #      printf ("eio_poll () = %d\n", eio_poll ());
+        print 'r', eio.nreqs()
         print 'eio_poll () = %d' % eio.poll()
 #    }
 #  printf ("leaving event loop\n");
@@ -171,28 +180,11 @@ if __name__ == '__main__':
 #    {
 #      /* avoid relative paths yourself(!) */
 #      eio_mkdir ("eio-test-dir", 0777, 0, res_cb, "mkdir");
-    #eio.mkdir('eio-test-dir', 0777)
+    eio.mkdir('eio-test-dir', 0777)
 #      eio_nop (0, res_cb, "nop");
-    print 'nop1'
     eio.nop()
-    print 'nop2'
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.nop()
-    eio.mkdir('eio-test-dir2', 0777)
-#      event_loop ();
-    print 'event loop'
     event_loop()
-#
+
 #      eio_stat ("eio-test-dir", 0, stat_cb, "stat");
 #      eio_lstat ("eio-test-dir", 0, stat_cb, "stat");
 #      eio_open ("eio-test-dir/eio-test-file", O_RDWR | O_CREAT, 0777, 0, open_cb, "open");
