@@ -99,31 +99,16 @@ cdef object _py_want_poll_cb
 cdef object _py_done_poll_cb
 
 cdef void _want_poll() with gil:
-    #cdef PyGILState_STATE gstate
-    #gstate = PyGILState_Ensure()
-    print 'initialized:', Py_IsInitialized(), 'threads:', PyEval_ThreadsInitialized()
     if Py_IsInitialized() == 0:
-        print 'returning!!!!!!!!!!'
         return
-    
-    #print 'in _done_poll'
 
     global _py_want_poll_cb
     if _py_want_poll_cb:
         _py_want_poll_cb()
     
-    # Release the thread. No Python API allowed beyond this point.
-    #PyGILState_Release(gstate)
-
 cdef void _done_poll() with gil:
-    #PyEval_InitThreads()
-    print 'initialized:', Py_IsInitialized(), 'threads:', PyEval_ThreadsInitialized()
     if Py_IsInitialized() == 0:
-        print 'returning!!!!!!!!!!'
         return
-    
-    #print 'in _done_poll'
-
     global _py_done_poll_cb
     if _py_done_poll_cb:
         _py_done_poll_cb()
@@ -141,36 +126,31 @@ def init(want_poll=None, done_poll=None):
 cdef int _void_callback(eio_req *req):
     print (<object>req.data)
 
-
 cdef int status_callback (eio_req *req) with gil:
-    print 'FFFFFFFFFFFFFFFFFFFFFFFFFFF'
-    #print 'callback', req.data
-    #return 0
+    print 'status callback', req.data
+
+
 
 def nop():
-    #PyEval_InitThreads()
-    #cdef PyGILState_STATE gstate
-    #gstate = PyGILState_Ensure()
-    
-    print 'in nop'
-    eio_nop(0, NULL, NULL)
-
-    ## Release the thread. No Python API allowed beyond this point.
-    #PyGILState_Release(gstate)
-
+    with nogil:    
+        eio_nop(0, NULL, NULL)
 
 #    eio_req *eio_mkdir     (char *path, mode_t mode, int pri, eio_cb cb, void *data)
-def mkdir(path, mode=0777, pri=0, cb=None, data=None):
+def mkdir(path, mode=0777, callback=None):
     cdef eio_req *r
     with nogil:
-        #r = eio_mkdir(path, <mode_t>mode, pri, <eio_cb><void *>cb, <void*>data);
-        r = eio_mkdir(path, <mode_t>mode, pri, status_callback, <void*>data);
+        r = eio_mkdir(path, <mode_t>mode, 0, status_callback, <void*>callback)
 
 def rmdir(path, callback=None):
     cdef eio_req *r
     with nogil:
-        r = eio_rmdir(path, 0, status_callback, <void*>callback);
-        #eio_rmdir     (char *path, int pri, eio_cb cb, void *data)
+        r = eio_rmdir(path, 0, status_callback, <void*>callback)
+
+def stat(path, callback=None):
+    cdef eio_req *r
+    with nogil:
+        r = eio_stat(path, 0, status_callback, <void*>callback)
+#eio_req *eio_stat      (char *path, int pri, eio_cb cb, void *data) # stat buffer=ptr2 allocated dynamically
 
 def poll():
     cdef int r

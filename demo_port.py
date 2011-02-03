@@ -184,6 +184,7 @@ if __name__ == '__main__':
 #      eio_nop (0, res_cb, "nop");
     eio.nop()
     event_loop()
+    eio.stat('eio-test-dir');
 
 #      eio_stat ("eio-test-dir", 0, stat_cb, "stat");
 #      eio_lstat ("eio-test-dir", 0, stat_cb, "stat");
