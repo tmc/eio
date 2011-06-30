@@ -1,4 +1,4 @@
 /build/
-eio.h
-eio.c
-eio.so
+/eio.c
+/eio.so
+/libeio/*

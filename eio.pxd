@@ -6,14 +6,14 @@ cdef extern from "sys/types.h":
 
 ctypedef int mode_t
 
-cdef extern from "eio.h":
+cdef extern from "libeio/eio.c":
 
     cdef struct eio_req:
       ssize_t result # result of syscall, e.g. result = read (... 
       int type        # EIO_xxx constant ETP
       char *data
 
-cdef extern from "eio.h" nogil:
+cdef extern from "libeio/eio.c" nogil:
 
     cdef struct eio_dirent
     ctypedef int (*eio_cb)(eio_req *req)
