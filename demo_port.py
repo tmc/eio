@@ -24,7 +24,7 @@ import select
 ##include <sys/stat.h>
 #
 ##include "eio.h"
-import pyeio as eio
+import eio
 #
 #int respipe [2];
 respipe = []
@@ -67,15 +67,13 @@ def event_loop():
 #  printf ("\nentering event loop\n");
     print 'entering event loop'
 #  while (eio_nreqs ())
-    print 'a'
     while eio.nreqs():
-        print 'b'
 #    {
 #      poll (&pfd, 1, -1);
         p.poll(1000)
 #      printf ("eio_poll () = %d\n", eio_poll ());
-        print 'r', eio.nreqs()
-        print 'eio_poll () = %d' % eio.poll()
+        #print 'eio_poll () = %d' % eio.poll()
+        eio.poll()
 #    }
 #  printf ("leaving event loop\n");
     print 'leaving event loop'
@@ -183,15 +181,16 @@ if __name__ == '__main__':
     eio.mkdir('eio-test-dir', 0777)
 #      eio_nop (0, res_cb, "nop");
     eio.nop()
-    event_loop()
-    eio.stat('eio-test-dir');
-
 #      eio_stat ("eio-test-dir", 0, stat_cb, "stat");
+    eio.stat('eio-test-dir');
 #      eio_lstat ("eio-test-dir", 0, stat_cb, "stat");
+    eio.lstat('eio-test-dir');
 #      eio_open ("eio-test-dir/eio-test-file", O_RDWR | O_CREAT, 0777, 0, open_cb, "open");
+    #eio.open('eio-test-dir/eio-test-file');
 #      eio_symlink ("test", "eio-test-dir/eio-symlink", 0, res_cb, "symlink");
 #      eio_mknod ("eio-test-dir/eio-fifo", S_IFIFO, 0, 0, res_cb, "mknod");
 #      event_loop ();
+    event_loop()
 #
 #      eio_utime ("eio-test-dir", 12345.678, 23456.789, 0, res_cb, "utime");
 #      eio_futime (last_fd, 92345.678, 93456.789, 0, res_cb, "futime");
@@ -246,4 +245,4 @@ if __name__ == '__main__':
 #  return 0;
 #}
 #
-print 'normally exiting'
+print 'normally exiting\n'
