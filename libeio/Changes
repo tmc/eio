@@ -49,4 +49,6 @@ TODO: fadvise request
           large transfers, using a heuristic.
         - use libecb, and apply lots of minor space optimisations.
         - disable sendfile on darwin, broken as everything else.
+        - add realpath request and implementation.
+	- cancelled requests will still invoke their request callbacks.
 

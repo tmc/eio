@@ -45,6 +45,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <signal.h>
 #include <sys/types.h>
 
 typedef struct eio_req    eio_req;
@@ -154,7 +155,7 @@ enum
   EIO_MLOCK, EIO_MLOCKALL,
   EIO_UNLINK, EIO_RMDIR, EIO_MKDIR, EIO_RENAME,
   EIO_MKNOD, EIO_READDIR,
-  EIO_LINK, EIO_SYMLINK, EIO_READLINK,
+  EIO_LINK, EIO_SYMLINK, EIO_READLINK, EIO_REALPATH,
   EIO_GROUP, EIO_NOP,
   EIO_BUSY
 };
@@ -195,6 +196,12 @@ struct eio_req
   long int3;       /* chown, fchown: gid */
   int errorno;     /* errno value on syscall return */
 
+#if __i386 || __amd64
+  unsigned char cancelled;
+#else
+  sig_atomic_t cancelled;
+#endif
+
   unsigned char flags; /* private */
   signed char pri;     /* the priority */
 
@@ -210,10 +217,9 @@ struct eio_req
 
 /* _private_ request flags */
 enum {
-  EIO_FLAG_CANCELLED = 0x01, /* request was cancelled */
-  EIO_FLAG_PTR1_FREE = 0x02, /* need to free(ptr1) */
-  EIO_FLAG_PTR2_FREE = 0x04, /* need to free(ptr2) */
-  EIO_FLAG_GROUPADD  = 0x08  /* some request was added to the group */
+  EIO_FLAG_PTR1_FREE = 0x01, /* need to free(ptr1) */
+  EIO_FLAG_PTR2_FREE = 0x02, /* need to free(ptr2) */
+  EIO_FLAG_GROUPADD  = 0x04  /* some request was added to the group */
 };
 
 /* undocumented/unsupported/private helper */
@@ -284,6 +290,7 @@ eio_req *eio_readdir   (const char *path, int flags, int pri, eio_cb cb, void *d
 eio_req *eio_rmdir     (const char *path, int pri, eio_cb cb, void *data);
 eio_req *eio_unlink    (const char *path, int pri, eio_cb cb, void *data);
 eio_req *eio_readlink  (const char *path, int pri, eio_cb cb, void *data); /* result=ptr2 allocated dynamically */
+eio_req *eio_realpath  (const char *path, int pri, eio_cb cb, void *data); /* result=ptr2 allocated dynamically */
 eio_req *eio_stat      (const char *path, int pri, eio_cb cb, void *data); /* stat buffer=ptr2 allocated dynamically */
 eio_req *eio_lstat     (const char *path, int pri, eio_cb cb, void *data); /* stat buffer=ptr2 allocated dynamically */
 eio_req *eio_statvfs   (const char *path, int pri, eio_cb cb, void *data); /* stat buffer=ptr2 allocated dynamically */
@@ -307,7 +314,7 @@ void eio_grp_cancel    (eio_req *grp); /* cancels all sub requests but not the g
 /* request api */
 
 /* true if the request was cancelled, useful in the invoke callback */
-#define EIO_CANCELLED(req)   ((req)->flags & EIO_FLAG_CANCELLED)
+#define EIO_CANCELLED(req)   ((req)->cancelled)
 
 #define EIO_RESULT(req)      ((req)->result)
 /* returns a pointer to the result buffer allocated by eio */
@@ -320,11 +327,9 @@ void eio_grp_cancel    (eio_req *grp); /* cancels all sub requests but not the g
 void eio_submit (eio_req *req);
 /* cancel a request as soon fast as possible, if possible */
 void eio_cancel (eio_req *req);
-/* destroy a request that has never been submitted */
-void eio_destroy (eio_req *req);
 
 /*****************************************************************************/
-/* convinience functions */
+/* convenience functions */
 
 ssize_t eio_sendfile_sync (int ofd, int ifd, off_t offset, size_t count);
 

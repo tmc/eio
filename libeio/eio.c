@@ -62,10 +62,16 @@
 #include <assert.h>
 
 /* intptr_t comes from unistd.h, says POSIX/UNIX/tradition */
-/* intptr_t only comes form stdint.h, says idiot openbsd coder */
+/* intptr_t only comes from stdint.h, says idiot openbsd coder */
 #if HAVE_STDINT_H
 # include <stdint.h>
 #endif
+
+#ifndef ECANCELED
+# define ECANCELED EDOM
+#endif
+
+static void eio_destroy (eio_req *req);
 
 #ifndef EIO_FINISH
 # define EIO_FINISH(req)  ((req)->finish) && !EIO_CANCELLED (req) ? (req)->finish (req) : 0
@@ -585,9 +591,7 @@ etp_poll (void)
 static void
 etp_cancel (ETP_REQ *req)
 {
-  X_LOCK   (wrklock);
-  req->flags |= EIO_FLAG_CANCELLED;
-  X_UNLOCK (wrklock);
+  req->cancelled = 1;
 
   eio_grp_cancel (req);
 }
@@ -713,7 +717,7 @@ grp_dec (eio_req *grp)
     return 0;
 }
 
-void
+static void
 eio_destroy (eio_req *req)
 {
   if ((req)->flags & EIO_FLAG_PTR1_FREE) free (req->ptr1);
@@ -741,7 +745,7 @@ eio_finish (eio_req *req)
 
       res2 = grp_dec (grp);
 
-      if (!res && res2)
+      if (!res)
         res = res2;
     }
 
@@ -983,6 +987,9 @@ eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
 
   for (;;)
     {
+#ifdef __APPLE__
+# undef HAVE_SENDFILE /* broken, as everything on os x */
+#endif
 #if HAVE_SENDFILE
 # if __linux
       off_t soffset = offset;
@@ -1008,7 +1015,7 @@ eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
       if (sbytes)
         res = sbytes;
 
-# elif defined (__APPLE__) && 0 /* broken, as everything on os x */
+# elif defined (__APPLE__)
       off_t sbytes = count;
       res = sendfile (ifd, ofd, offset, &sbytes, 0, 0);
 
@@ -1117,6 +1124,285 @@ eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
     }
 
   return res;
+}
+
+#ifdef PAGESIZE
+# define eio_pagesize() PAGESIZE
+#else
+static intptr_t
+eio_pagesize (void)
+{
+  static intptr_t page;
+
+  if (!page)
+    page = sysconf (_SC_PAGESIZE);
+
+  return page;
+}
+#endif
+
+static void
+eio_page_align (void **addr, size_t *length)
+{
+  intptr_t mask = eio_pagesize () - 1;
+
+  /* round down addr */
+  intptr_t adj = mask & (intptr_t)*addr;
+
+  *addr   = (void *)((intptr_t)*addr - adj);
+  *length += adj;
+
+  /* round up length */
+  *length = (*length + mask) & ~mask;
+}
+
+#if !_POSIX_MEMLOCK
+# define eio__mlockall(a) ((errno = ENOSYS), -1)
+#else
+
+static int
+eio__mlockall (int flags)
+{
+  #if __GLIBC__ == 2 && __GLIBC_MINOR__ <= 7
+    extern int mallopt (int, int);
+    mallopt (-6, 238); /* http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=473812 */
+  #endif
+
+  if (EIO_MCL_CURRENT   != MCL_CURRENT
+      || EIO_MCL_FUTURE != MCL_FUTURE)
+    {
+      flags = 0
+         | (flags & EIO_MCL_CURRENT ? MCL_CURRENT : 0)
+         | (flags & EIO_MCL_FUTURE  ? MCL_FUTURE : 0);
+    }
+
+  return mlockall (flags);
+}
+#endif
+
+#if !_POSIX_MEMLOCK_RANGE
+# define eio__mlock(a,b) ((errno = ENOSYS), -1)
+#else
+
+static int
+eio__mlock (void *addr, size_t length)
+{
+  eio_page_align (&addr, &length);
+
+  return mlock (addr, length);
+}
+
+#endif
+
+#if !(_POSIX_MAPPED_FILES && _POSIX_SYNCHRONIZED_IO)
+# define eio__msync(a,b,c) ((errno = ENOSYS), -1)
+#else
+
+static int
+eio__msync (void *mem, size_t len, int flags)
+{
+  eio_page_align (&mem, &len);
+
+  if (EIO_MS_ASYNC         != MS_SYNC
+      || EIO_MS_INVALIDATE != MS_INVALIDATE
+      || EIO_MS_SYNC       != MS_SYNC)
+    {
+      flags = 0
+         | (flags & EIO_MS_ASYNC      ? MS_ASYNC : 0)
+         | (flags & EIO_MS_INVALIDATE ? MS_INVALIDATE : 0)
+         | (flags & EIO_MS_SYNC       ? MS_SYNC : 0);
+    }
+
+  return msync (mem, len, flags);
+}
+
+#endif
+
+static int
+eio__mtouch (eio_req *req)
+{
+  void *mem  = req->ptr2;
+  size_t len = req->size;
+  int flags  = req->int1;
+
+  eio_page_align (&mem, &len);
+
+  {
+    intptr_t addr = (intptr_t)mem;
+    intptr_t end = addr + len;
+    intptr_t page = eio_pagesize ();
+
+    if (addr < end)
+      if (flags & EIO_MT_MODIFY) /* modify */
+        do { *((volatile sig_atomic_t *)addr) |= 0; } while ((addr += page) < len && !EIO_CANCELLED (req));
+      else
+        do { *((volatile sig_atomic_t *)addr)     ; } while ((addr += page) < len && !EIO_CANCELLED (req));
+  }
+
+  return 0;
+}
+
+/*****************************************************************************/
+/* requests implemented outside eio_execute, because they are so large */
+
+static void
+eio__realpath (eio_req *req, etp_worker *self)
+{
+  char *rel = req->ptr1;
+  char *res;
+  char *tmp1, *tmp2;
+#if SYMLOOP_MAX > 32
+  int symlinks = SYMLOOP_MAX;
+#else
+  int symlinks = 32;
+#endif
+
+  req->result = -1;
+
+  errno = EINVAL;
+  if (!rel)
+    return;
+
+  errno = ENOENT;
+  if (!*rel)
+    return;
+
+  if (!req->ptr2)
+    {
+      X_LOCK (wrklock);
+      req->flags |= EIO_FLAG_PTR2_FREE;
+      X_UNLOCK (wrklock);
+      req->ptr2 = malloc (PATH_MAX * 3);
+
+      errno = ENOMEM;
+      if (!req->ptr2)
+        return;
+    }
+
+  res  = req->ptr2;
+  tmp1 = res  + PATH_MAX;
+  tmp2 = tmp1 + PATH_MAX;
+
+#if 0 /* disabled, the musl way to do things is just too racy */
+#if __linux && defined(O_NONBLOCK) && defined(O_NOATIME)
+  /* on linux we may be able to ask the kernel */
+  {
+    int fd = open (rel, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_NOATIME);
+
+    if (fd >= 0)
+      {
+        sprintf (tmp1, "/proc/self/fd/%d", fd);
+        req->result = readlink (tmp1, res, PATH_MAX);
+        close (fd);
+
+        /* here we should probably stat the open file and the disk file, to make sure they still match */
+
+        if (req->result > 0)
+          goto done;
+      }
+    else if (errno == ELOOP || errno == ENAMETOOLONG || errno == ENOENT || errno == ENOTDIR || errno == EIO)
+      return;
+  }
+#endif
+#endif
+
+  if (*rel != '/')
+    {
+      if (!getcwd (res, PATH_MAX))
+        return;
+
+      if (res [1]) /* only use if not / */
+        res += strlen (res);
+    }
+
+  while (*rel)
+    {
+      ssize_t len, linklen;
+      char *beg = rel;
+
+      while (*rel && *rel != '/')
+        ++rel;
+
+      len = rel - beg;
+
+      if (!len) /* skip slashes */
+        {
+          ++rel;
+          continue;
+        }
+
+      if (beg [0] == '.')
+        {
+          if (len == 1)
+            continue; /* . - nop */
+
+          if (beg [1] == '.' && len == 2)
+            {
+              /* .. - back up one component, if possible */
+
+              while (res != req->ptr2)
+                if (*--res == '/')
+                  break;
+
+              continue;
+            }
+        }
+
+        errno = ENAMETOOLONG;
+        if (res + 1 + len + 1 >= tmp1)
+          return;
+
+        /* copy one component */
+        *res = '/';
+        memcpy (res + 1, beg, len);
+
+        /* zero-terminate, for readlink */
+        res [len + 1] = 0;
+
+        /* now check if it's a symlink */
+        linklen = readlink (req->ptr2, tmp1, PATH_MAX);
+
+        if (linklen < 0)
+          {
+            if (errno != EINVAL)
+              return;
+
+            /* it's a normal directory. hopefully */
+            res += len + 1;
+          }
+        else
+          {
+            /* yay, it was a symlink - build new path in tmp2 */
+            int rellen = strlen (rel);
+
+            errno = ENAMETOOLONG;
+            if (linklen + 1 + rellen >= PATH_MAX)
+              return;
+
+            errno = ELOOP;
+            if (!--symlinks)
+              return;
+
+            if (*tmp1 == '/')
+              res = req->ptr2; /* symlink resolves to an absolute path */
+
+            /* we need to be careful, as rel might point into tmp2 already */
+            memmove (tmp2 + linklen + 1, rel, rellen + 1);
+            tmp2 [linklen] = '/';
+            memcpy (tmp2, tmp1, linklen);
+
+            rel = tmp2;
+          }
+    }
+
+  /* special case for the lone root path */
+  if (res == req->ptr2)
+    *res++ = '/';
+
+  req->result = res - (char *)req->ptr2;
+
+done:
+  req->ptr2 = realloc (req->ptr2, req->result); /* trade time for space savings */
 }
 
 static signed char
@@ -1486,122 +1772,6 @@ eio__scandir (eio_req *req, etp_worker *self)
       }
 }
 
-#ifdef PAGESIZE
-# define eio_pagesize() PAGESIZE
-#else
-static intptr_t
-eio_pagesize (void)
-{
-  static intptr_t page;
-
-  if (!page)
-    page = sysconf (_SC_PAGESIZE);
-
-  return page;
-}
-#endif
-
-static void
-eio_page_align (void **addr, size_t *length)
-{
-  intptr_t mask = eio_pagesize () - 1;
-
-  /* round down addr */
-  intptr_t adj = mask & (intptr_t)*addr;
-
-  *addr   = (void *)((intptr_t)*addr - adj);
-  *length += adj;
-
-  /* round up length */
-  *length = (*length + mask) & ~mask;
-}
-
-#if !_POSIX_MEMLOCK
-# define eio__mlockall(a) ((errno = ENOSYS), -1)
-#else
-
-static int
-eio__mlockall (int flags)
-{
-  #if __GLIBC__ == 2 && __GLIBC_MINOR__ <= 7
-    extern int mallopt (int, int);
-    mallopt (-6, 238); /* http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=473812 */
-  #endif
-
-  if (EIO_MCL_CURRENT   != MCL_CURRENT
-      || EIO_MCL_FUTURE != MCL_FUTURE)
-    {
-      flags = 0
-         | (flags & EIO_MCL_CURRENT ? MCL_CURRENT : 0)
-         | (flags & EIO_MCL_FUTURE  ? MCL_FUTURE : 0);
-    }
-
-  return mlockall (flags);
-}
-#endif
-
-#if !_POSIX_MEMLOCK_RANGE
-# define eio__mlock(a,b) ((errno = ENOSYS), -1)
-#else
-
-static int
-eio__mlock (void *addr, size_t length)
-{
-  eio_page_align (&addr, &length);
-
-  return mlock (addr, length);
-}
-
-#endif
-
-#if !(_POSIX_MAPPED_FILES && _POSIX_SYNCHRONIZED_IO)
-# define eio__msync(a,b,c) ((errno = ENOSYS), -1)
-#else
-
-static int
-eio__msync (void *mem, size_t len, int flags)
-{
-  eio_page_align (&mem, &len);
-
-  if (EIO_MS_ASYNC         != MS_SYNC
-      || EIO_MS_INVALIDATE != MS_INVALIDATE
-      || EIO_MS_SYNC       != MS_SYNC)
-    {
-      flags = 0
-         | (flags & EIO_MS_ASYNC      ? MS_ASYNC : 0)
-         | (flags & EIO_MS_INVALIDATE ? MS_INVALIDATE : 0)
-         | (flags & EIO_MS_SYNC       ? MS_SYNC : 0);
-    }
-
-  return msync (mem, len, flags);
-}
-
-#endif
-
-static int
-eio__mtouch (eio_req *req)
-{
-  void *mem  = req->ptr2;
-  size_t len = req->size;
-  int flags  = req->int1;
-
-  eio_page_align (&mem, &len);
-
-  {
-    intptr_t addr = (intptr_t)mem;
-    intptr_t end = addr + len;
-    intptr_t page = eio_pagesize ();
-
-    if (addr < end)
-      if (flags & EIO_MT_MODIFY) /* modify */
-        do { *((volatile sig_atomic_t *)addr) |= 0; } while ((addr += page) < len && !EIO_CANCELLED (req));
-      else
-        do { *((volatile sig_atomic_t *)addr)     ; } while ((addr += page) < len && !EIO_CANCELLED (req));
-  }
-
-  return 0;
-}
-
 /*****************************************************************************/
 
 #define ALLOC(len)				\
@@ -1668,8 +1838,7 @@ X_THREAD_PROC (etp_proc)
       if (req->type < 0)
         goto quit;
 
-      if (!EIO_CANCELLED (req))
-        ETP_EXECUTE (self, req);
+      ETP_EXECUTE (self, req);
 
       X_LOCK (reslock);
 
@@ -1733,6 +1902,13 @@ eio_api_destroy (eio_req *req)
 static void
 eio_execute (etp_worker *self, eio_req *req)
 {
+  if (ecb_expect_false (EIO_CANCELLED (req)))
+    {
+      req->result  = -1;
+      req->errorno = ECANCELED;
+      return;
+    }
+
   switch (req->type)
     {
       case EIO_READ:      ALLOC (req->size);
@@ -1775,6 +1951,8 @@ eio_execute (etp_worker *self, eio_req *req)
       case EIO_LINK:      req->result = link      (req->ptr1, req->ptr2); break;
       case EIO_SYMLINK:   req->result = symlink   (req->ptr1, req->ptr2); break;
       case EIO_MKNOD:     req->result = mknod     (req->ptr1, (mode_t)req->int2, (dev_t)req->offs); break;
+
+      case EIO_REALPATH:  eio__realpath (req, self); break;
 
       case EIO_READLINK:  ALLOC (PATH_MAX);
                           req->result = readlink  (req->ptr1, req->ptr2, PATH_MAX); break;
@@ -2000,6 +2178,11 @@ eio__1path (int type, const char *path, int pri, eio_cb cb, void *data)
 eio_req *eio_readlink (const char *path, int pri, eio_cb cb, void *data)
 {
   return eio__1path (EIO_READLINK, path, pri, cb, data);
+}
+
+eio_req *eio_realpath (const char *path, int pri, eio_cb cb, void *data)
+{
+  return eio__1path (EIO_REALPATH, path, pri, cb, data);
 }
 
 eio_req *eio_stat (const char *path, int pri, eio_cb cb, void *data)
