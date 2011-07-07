@@ -2,3 +2,4 @@
 /eio.c
 /eio.so
 /libeio/*
+/cython_debug

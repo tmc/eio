@@ -7,10 +7,11 @@ import gevent
 from gevent.event import Event
 from gevent.socket import wait_read
 
+
 def show_nonblocking():
     while True:
-        print 'other greenlet running!'
-        gevent.sleep(1)
+        gevent.sleep(0.1)
+        print 'not blocking!'
 
 ## eio utilities
 
@@ -50,6 +51,8 @@ def do_io(n_megs, use_eio=False):
     else:
         buf = os.read(r, 1024*1024*n_megs)
     print '\ndone.'
+    
+    gevent.sleep(0.5)
 
 
 if __name__ == '__main__':
