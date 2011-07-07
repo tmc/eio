@@ -1,0 +1,2 @@
+implement more complex callbacks for calls using more than one part of the eio_req
+check return codes and raise exceptions in all appropriate places
