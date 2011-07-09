@@ -436,14 +436,11 @@ def busy(eio_tstamp delay, callback=None):
     return eio_req_from_ptr(r)
 
 
-
 def poll():
     cdef int r
     with nogil:
         r = eio_poll()
     return r
-
-
 
 def nreqs():
     return eio_nreqs()
