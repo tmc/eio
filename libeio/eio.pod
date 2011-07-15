@@ -133,7 +133,7 @@ If C<eio_poll ()> is configured to not handle all results in one go
 (i.e. it returns C<-1>) then you should start an idle watcher that calls
 C<eio_poll> until it returns something C<!= -1>.
 
-A full-featured conenctor between libeio and libev would look as follows
+A full-featured connector between libeio and libev would look as follows
 (if C<eio_poll> is handling all requests, it can of course be simplified a
 lot by removing the idle watcher logic):
 
@@ -407,9 +407,10 @@ C<< req->result >>.
 
 =item eio_realpath  (const char *path, int pri, eio_cb cb, void *data)
 
-Similar to the realpath libc function, but unlike that one, result is
-C<-1> on failure and the length of the returned path in C<ptr2> (which is
-not 0-terminated) - this is similar to readlink.
+Similar to the realpath libc function, but unlike that one, C<<
+req->result >> is C<-1> on failure. On success, the result is the length
+of the returned path in C<ptr2> (which is I<NOT> 0-terminated) - this is
+similar to readlink.
 
 =item eio_stat      (const char *path, int pri, eio_cb cb, void *data)
 
@@ -595,6 +596,15 @@ as calling C<fdatasync>.
 Flags can be any combination of C<EIO_SYNC_FILE_RANGE_WAIT_BEFORE>,
 C<EIO_SYNC_FILE_RANGE_WRITE> and C<EIO_SYNC_FILE_RANGE_WAIT_AFTER>.
 
+=item eio_fallocate (int fd, int mode, off_t offset, off_t len, int pri, eio_cb cb, void *data)
+
+Calls C<fallocate> (note: I<NOT> C<posix_fallocate>!). If the syscall is
+missing, then it returns failure and sets C<errno> to C<ENOSYS>.
+
+The C<mode> argument can be C<0> (for behaviour similar to
+C<posix_fallocate>), or C<EIO_FALLOC_FL_KEEP_SIZE>, which keeps the size
+of the file unchanged (but still preallocates space beyond end of file).
+
 =back
 
 =head3 LIBEIO-SPECIFIC REQUESTS
@@ -679,7 +689,8 @@ methods.
 
 =item eio_req *grp = eio_grp (eio_cb cb, void *data)
 
-Creates, submits and returns a group request.
+Creates, submits and returns a group request. Note that it doesn't have a
+priority, unlike all other requests.
 
 =item eio_grp_add (eio_req *grp, eio_req *req)
 
@@ -688,23 +699,78 @@ Adds a request to the request group.
 =item eio_grp_cancel (eio_req *grp)
 
 Cancels all requests I<in> the group, but I<not> the group request
-itself. You can cancel the group request via a normal C<eio_cancel> call.
-
-
+itself. You can cancel the group request I<and> all subrequests via a
+normal C<eio_cancel> call.
 
 =back
 
+=head4 GROUP REQUEST LIFETIME
+
+Left alone, a group request will instantly move to the pending state and
+will be finished at the next call of C<eio_poll>.
+
+The usefulness stems from the fact that, if a subrequest is added to a
+group I<before> a call to C<eio_poll>, via C<eio_grp_add>, then the group
+will not finish until all the subrequests have finished.
+
+So the usage cycle of a group request is like this: after it is created,
+you normally instantly add a subrequest. If none is added, the group
+request will finish on it's own. As long as subrequests are added before
+the group request is finished it will be kept from finishing, that is the
+callbacks of any subrequests can, in turn, add more requests to the group,
+and as long as any requests are active, the group request itself will not
+finish.
+
+=head4 CREATING COMPOSITE REQUESTS
+
+Imagine you wanted to create an C<eio_load> request that opens a file,
+reads it and closes it. This means it has to execute at least three eio
+requests, but for various reasons it might be nice if that request looked
+like any other eio request.
+
+This can be done with groups:
+
+=over 4
+
+=item 1) create the request object
+
+Create a group that contains all further requests. This is the request you
+can return as "the load request".
+
+=item 2) open the file, maybe
+
+Next, open the file with C<eio_open> and add the request to the group
+request and you are finished setting up the request.
+
+If, for some reason, you cannot C<eio_open> (path is a null ptr?) you
+can set C<< grp->result >> to C<-1> to signal an error and let the group
+request finish on its own.
+
+=item 3) open callback adds more requests
+
+In the open callback, if the open was not successful, copy C<<
+req->errorno >> to C<< grp->errorno >> and set C<< grp->errorno >> to
+C<-1> to signal an error.
+
+Otherwise, malloc some memory or so and issue a read request, adding the
+read request to the group.
+
+=item 4) continue issuing requests till finished
+
+In the real callback, check for errors and possibly continue with
+C<eio_close> or any other eio request in the same way.
+
+As soon as no new requests are added the group request will finish. Make
+sure you I<always> set C<< grp->result >> to some sensible value.
+
+=back
+
+=head4 REQUEST LIMITING
 
 
 #TODO
 
-/*****************************************************************************/
-/* groups */
-
-eio_req *eio_grp       (eio_cb cb, void *data);
-void eio_grp_feed      (eio_req *grp, void (*feed)(eio_req *req), int limit);
 void eio_grp_limit     (eio_req *grp, int limit);
-void eio_grp_cancel    (eio_req *grp); /* cancels all sub requests but not the group */
 
 
 =back
@@ -845,7 +911,7 @@ was written to use very little stackspace, but when using C<EIO_CUSTOM>
 requests, you might want to increase this.
 
 If this symbol is undefined (the default) then libeio will use its default
-stack size (C<sizeof (long) * 4096> currently).  If it is defined, but
+stack size (C<sizeof (void *) * 4096> currently). If it is defined, but
 C<0>, then the default operating system stack size will be used. In all
 other cases, the value must be an expression that evaluates to the desired
 stack size.

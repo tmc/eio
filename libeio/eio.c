@@ -56,7 +56,6 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <limits.h>
 #include <fcntl.h>
 #include <assert.h>
@@ -85,43 +84,85 @@ static void eio_destroy (eio_req *req);
 # define EIO_FEED(req)    do { if ((req)->feed   ) (req)->feed    (req); } while (0)
 #endif
 
+#ifndef EIO_FD_TO_WIN32_HANDLE
+# define EIO_FD_TO_WIN32_HANDLE(fd) _get_osfhandle (fd)
+#endif
+#ifndef EIO_WIN32_HANDLE_TO_FD
+# define EIO_WIN32_HANDLE_TO_FD(handle) _open_osfhandle (handle, 0)
+#endif
+
+#define EIO_ERRNO(errval,retval) ((errno = errval), retval)
+
+#define EIO_ENOSYS() EIO_ERRNO (ENOSYS, -1)
+
 #ifdef _WIN32
 
-  /*doh*/
+  #define PAGESIZE 4096 /* GetSystemInfo? */
+
+  #ifdef EIO_STRUCT_STATI64
+    #define stat(path,buf)       _stati64 (path,buf)
+    #define fstat(fd,buf)        _fstati64 (path,buf)
+  #endif
+  #define lstat(path,buf)      stat (path,buf)
+  #define fsync(fd)            (FlushFileBuffers (EIO_FD_TO_WIN32_HANDLE (fd)) ? 0 : EIO_ERRNO (EBADF, -1))
+  #define mkdir(path,mode)     _mkdir (path)
+  #define link(old,neu)        (CreateHardLink (neu, old, 0) ? 0 : EIO_ERRNO (ENOENT, -1))
+
+  #define chown(path,uid,gid)  EIO_ENOSYS ()
+  #define fchown(fd,uid,gid)   EIO_ENOSYS ()
+  #define truncate(path,offs)  EIO_ENOSYS () /* far-miss: SetEndOfFile */
+  #define ftruncate(fd,offs)   EIO_ENOSYS () /* near-miss: SetEndOfFile */
+  #define mknod(path,mode,dev) EIO_ENOSYS ()
+  #define sync()               EIO_ENOSYS ()
+
+  /* we could even stat and see if it exists */
+  static int
+  symlink (const char *old, const char *neu)
+  {
+    if (CreateSymbolicLink (neu, old, 1))
+      return 0;
+
+    if (CreateSymbolicLink (neu, old, 0))
+      return 0;
+
+    return EIO_ERRNO (ENOENT, -1);
+  }
+
 #else
 
-# include <sys/time.h>
-# include <sys/select.h>
-# include <unistd.h>
-# include <utime.h>
-# include <signal.h>
-# include <dirent.h>
+  #include <sys/time.h>
+  #include <sys/select.h>
+  #include <sys/statvfs.h>
+  #include <unistd.h>
+  #include <utime.h>
+  #include <signal.h>
+  #include <dirent.h>
 
-#if _POSIX_MEMLOCK || _POSIX_MEMLOCK_RANGE || _POSIX_MAPPED_FILES
-# include <sys/mman.h>
-#endif
+  #if _POSIX_MEMLOCK || _POSIX_MEMLOCK_RANGE || _POSIX_MAPPED_FILES
+    #include <sys/mman.h>
+  #endif
 
-/* POSIX_SOURCE is useless on bsd's, and XOPEN_SOURCE is unreliable there, too */
-# if __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
-#  define _DIRENT_HAVE_D_TYPE /* sigh */
-#  define D_INO(de) (de)->d_fileno
-#  define D_NAMLEN(de) (de)->d_namlen
-# elif __linux || defined d_ino || _XOPEN_SOURCE >= 600
-#  define D_INO(de) (de)->d_ino
-# endif
+  /* POSIX_SOURCE is useless on bsd's, and XOPEN_SOURCE is unreliable there, too */
+  #if __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+    #define _DIRENT_HAVE_D_TYPE /* sigh */
+    #define D_INO(de) (de)->d_fileno
+    #define D_NAMLEN(de) (de)->d_namlen
+  #elif __linux || defined d_ino || _XOPEN_SOURCE >= 600
+    #define D_INO(de) (de)->d_ino
+  #endif
 
-#ifdef _D_EXACT_NAMLEN
-# undef D_NAMLEN
-# define D_NAMLEN(de) _D_EXACT_NAMLEN (de)
-#endif
+  #ifdef _D_EXACT_NAMLEN
+    #undef D_NAMLEN
+    #define D_NAMLEN(de) _D_EXACT_NAMLEN (de)
+  #endif
 
-# ifdef _DIRENT_HAVE_D_TYPE
-#  define D_TYPE(de) (de)->d_type
-# endif
+  #ifdef _DIRENT_HAVE_D_TYPE
+    #define D_TYPE(de) (de)->d_type
+  #endif
 
-# ifndef EIO_STRUCT_DIRENT
-#  define EIO_STRUCT_DIRENT struct dirent
-# endif
+  #ifndef EIO_STRUCT_DIRENT
+    #define EIO_STRUCT_DIRENT struct dirent
+  #endif
 
 #endif
 
@@ -383,6 +424,9 @@ reqq_shift (etp_reqq *q)
 static void ecb_cold
 etp_thread_init (void)
 {
+#if !HAVE_PREADWRITE
+  X_MUTEX_CREATE (preadwritelock);
+#endif
   X_MUTEX_CREATE (wrklock);
   X_MUTEX_CREATE (reslock);
   X_MUTEX_CREATE (reqlock);
@@ -392,23 +436,11 @@ etp_thread_init (void)
 static void ecb_cold
 etp_atfork_prepare (void)
 {
-  X_LOCK (wrklock);
-  X_LOCK (reqlock);
-  X_LOCK (reslock);
-#if !HAVE_PREADWRITE
-  X_LOCK (preadwritelock);
-#endif
 }
 
 static void ecb_cold
 etp_atfork_parent (void)
 {
-#if !HAVE_PREADWRITE
-  X_UNLOCK (preadwritelock);
-#endif
-  X_UNLOCK (reslock);
-  X_UNLOCK (reqlock);
-  X_UNLOCK (wrklock);
 }
 
 static void ecb_cold
@@ -847,10 +879,10 @@ int eio_poll (void)
 # define pread  eio__pread
 # define pwrite eio__pwrite
 
-static ssize_t
+static eio_ssize_t
 eio__pread (int fd, void *buf, size_t count, off_t offset)
 {
-  ssize_t res;
+  eio_ssize_t res;
   off_t ooffset;
 
   X_LOCK (preadwritelock);
@@ -863,10 +895,10 @@ eio__pread (int fd, void *buf, size_t count, off_t offset)
   return res;
 }
 
-static ssize_t
+static eio_ssize_t
 eio__pwrite (int fd, void *buf, size_t count, off_t offset)
 {
-  ssize_t res;
+  eio_ssize_t res;
   off_t ooffset;
 
   X_LOCK (preadwritelock);
@@ -950,11 +982,22 @@ eio__sync_file_range (int fd, off_t offset, size_t nbytes, unsigned int flags)
   return fdatasync (fd);
 }
 
+static int
+eio__fallocate (int fd, int mode, off_t offset, size_t len)
+{
+#if HAVE_FALLOCATE
+  return fallocate (fd, mode, offset, len);
+#else
+  errno = ENOSYS;
+  return -1;
+#endif
+}
+
 #if !HAVE_READAHEAD
 # undef readahead
 # define readahead(fd,offset,count) eio__readahead (fd, offset, count, self)
 
-static ssize_t
+static eio_ssize_t
 eio__readahead (int fd, off_t offset, size_t count, etp_worker *self)
 {
   size_t todo = count;
@@ -976,11 +1019,11 @@ eio__readahead (int fd, off_t offset, size_t count, etp_worker *self)
 #endif
 
 /* sendfile always needs emulation */
-static ssize_t
+static eio_ssize_t
 eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
 {
-  ssize_t written = 0;
-  ssize_t res;
+  eio_ssize_t written = 0;
+  eio_ssize_t res;
 
   if (!count)
     return 0;
@@ -1042,7 +1085,7 @@ eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
 
 # endif
 
-#elif defined (_WIN32)
+#elif defined (_WIN32) && 0
       /* does not work, just for documentation of what would need to be done */
       /* actually, cannot be done like this, as TransmitFile changes the file offset, */
       /* libeio guarantees that the file offset does not change, and windows */
@@ -1099,7 +1142,7 @@ eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
 
       while (count)
         {
-          ssize_t cnt;
+          eio_ssize_t cnt;
           
           cnt = pread (ifd, eio_buf, count > EIO_BUFSIZE ? EIO_BUFSIZE : count, offset);
 
@@ -1157,7 +1200,7 @@ eio_page_align (void **addr, size_t *length)
 }
 
 #if !_POSIX_MEMLOCK
-# define eio__mlockall(a) ((errno = ENOSYS), -1)
+# define eio__mlockall(a) EIO_ENOSYS ()
 #else
 
 static int
@@ -1181,7 +1224,7 @@ eio__mlockall (int flags)
 #endif
 
 #if !_POSIX_MEMLOCK_RANGE
-# define eio__mlock(a,b) ((errno = ENOSYS), -1)
+# define eio__mlock(a,b) EIO_ENOSYS ()
 #else
 
 static int
@@ -1195,7 +1238,7 @@ eio__mlock (void *addr, size_t length)
 #endif
 
 #if !(_POSIX_MAPPED_FILES && _POSIX_SYNCHRONIZED_IO)
-# define eio__msync(a,b,c) ((errno = ENOSYS), -1)
+# define eio__msync(a,b,c) EIO_ENOSYS ()
 #else
 
 static int
@@ -1317,7 +1360,7 @@ eio__realpath (eio_req *req, etp_worker *self)
 
   while (*rel)
     {
-      ssize_t len, linklen;
+      eio_ssize_t len, linklen;
       char *beg = rel;
 
       while (*rel && *rel != '/')
@@ -1794,12 +1837,15 @@ X_THREAD_PROC (etp_proc)
   ETP_REQ *req;
   struct timespec ts;
   etp_worker *self = (etp_worker *)thr_arg;
+  int timeout;
 
-  /* try to distribute timeouts somewhat randomly */
+  /* try to distribute timeouts somewhat evenly */
   ts.tv_nsec = ((unsigned long)self & 1023UL) * (1000000000UL / 1024UL);
 
   for (;;)
     {
+      ts.tv_sec = 0;
+
       X_LOCK (reqlock);
 
       for (;;)
@@ -1809,23 +1855,28 @@ X_THREAD_PROC (etp_proc)
           if (req)
             break;
 
+          if (ts.tv_sec == 1) /* no request, but timeout detected, let's quit */
+            {
+              X_UNLOCK (reqlock);
+              X_LOCK (wrklock);
+              --started;
+              X_UNLOCK (wrklock);
+              goto quit;
+            }
+
           ++idle;
 
-          ts.tv_sec = time (0) + idle_timeout;
-          if (X_COND_TIMEDWAIT (reqwait, reqlock, ts) == ETIMEDOUT)
+          if (idle <= max_idle)
+            /* we are allowed to idle, so do so without any timeout */
+            X_COND_WAIT (reqwait, reqlock);
+          else
             {
-              if (idle > max_idle)
-                {
-                  --idle;
-                  X_UNLOCK (reqlock);
-                  X_LOCK (wrklock);
-                  --started;
-                  X_UNLOCK (wrklock);
-                  goto quit;
-                }
+              /* initialise timeout once */
+              if (!ts.tv_sec)
+                ts.tv_sec = time (0) + idle_timeout;
 
-              /* we are allowed to idle, so do so without any timeout */
-              X_COND_WAIT (reqwait, reqlock);
+              if (X_COND_TIMEDWAIT (reqwait, reqlock, ts) == ETIMEDOUT)
+                ts.tv_sec = 1; /* assuming this is not a value computed above.,.. */
             }
 
           --idle;
@@ -1965,6 +2016,7 @@ eio_execute (etp_worker *self, eio_req *req)
       case EIO_MLOCK:     req->result = eio__mlock (req->ptr2, req->size); break;
       case EIO_MLOCKALL:  req->result = eio__mlockall (req->int1); break;
       case EIO_SYNC_FILE_RANGE: req->result = eio__sync_file_range (req->int1, req->offs, req->size, req->int2); break;
+      case EIO_FALLOCATE: req->result = eio__fallocate (req->int1, req->int2, req->offs, req->size); break;
 
       case EIO_READDIR:   eio__scandir (req, self); break;
 
@@ -2074,6 +2126,11 @@ eio_req *eio_sync_file_range (int fd, off_t offset, size_t nbytes, unsigned int 
   REQ (EIO_SYNC_FILE_RANGE); req->int1 = fd; req->offs = offset; req->size = nbytes; req->int2 = flags; SEND;
 }
 
+eio_req *eio_fallocate (int fd, int mode, off_t offset, size_t len, int pri, eio_cb cb, void *data)
+{
+  REQ (EIO_FALLOCATE); req->int1 = fd; req->int2 = mode; req->offs = offset; req->size = len; SEND;
+}
+
 eio_req *eio_fdatasync (int fd, int pri, eio_cb cb, void *data)
 {
   REQ (EIO_FDATASYNC); req->int1 = fd; SEND;
@@ -2124,7 +2181,7 @@ eio_req *eio_fchmod (int fd, mode_t mode, int pri, eio_cb cb, void *data)
   REQ (EIO_FCHMOD); req->int1 = fd; req->int2 = (long)mode; SEND;
 }
 
-eio_req *eio_fchown (int fd, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
+eio_req *eio_fchown (int fd, eio_uid_t uid, eio_gid_t gid, int pri, eio_cb cb, void *data)
 {
   REQ (EIO_FCHOWN); req->int1 = fd; req->int2 = (long)uid; req->int3 = (long)gid; SEND;
 }
@@ -2154,7 +2211,7 @@ eio_req *eio_truncate (const char *path, off_t offset, int pri, eio_cb cb, void 
   REQ (EIO_TRUNCATE); PATH; req->offs = offset; SEND;
 }
 
-eio_req *eio_chown (const char *path, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
+eio_req *eio_chown (const char *path, eio_uid_t uid, eio_gid_t gid, int pri, eio_cb cb, void *data)
 {
   REQ (EIO_CHOWN); PATH; req->int2 = (long)uid; req->int3 = (long)gid; SEND;
 }
@@ -2311,11 +2368,11 @@ eio_grp_add (eio_req *grp, eio_req *req)
 /*****************************************************************************/
 /* misc garbage */
 
-ssize_t
+eio_ssize_t
 eio_sendfile_sync (int ofd, int ifd, off_t offset, size_t count)
 {
   etp_worker wrk;
-  ssize_t ret;
+  eio_ssize_t ret;
 
   wrk.dbuf = 0;
 
