@@ -53,12 +53,13 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include <fcntl.h>
 #include <assert.h>
+#include <dirent.h>
 
 /* intptr_t comes from unistd.h, says POSIX/UNIX/tradition */
 /* intptr_t only comes from stdint.h, says idiot openbsd coder */
@@ -97,12 +98,18 @@ static void eio_destroy (eio_req *req);
 
 #ifdef _WIN32
 
+  #include <utime.h>
+
+  #define ENOTSOCK WSAENOTSOCK
+  #define EOPNOTSUPP WSAEOPNOTSUPP
+
   #define PAGESIZE 4096 /* GetSystemInfo? */
 
   #ifdef EIO_STRUCT_STATI64
-    #define stat(path,buf)       _stati64 (path,buf)
-    #define fstat(fd,buf)        _fstati64 (path,buf)
+    #define stat  _stati64
+    #define fstat _fstati64
   #endif
+
   #define lstat(path,buf)      stat (path,buf)
   #define fsync(fd)            (FlushFileBuffers (EIO_FD_TO_WIN32_HANDLE (fd)) ? 0 : EIO_ERRNO (EBADF, -1))
   #define mkdir(path,mode)     _mkdir (path)
@@ -130,13 +137,8 @@ static void eio_destroy (eio_req *req);
 
 #else
 
-  #include <sys/time.h>
   #include <sys/select.h>
   #include <sys/statvfs.h>
-  #include <unistd.h>
-  #include <utime.h>
-  #include <signal.h>
-  #include <dirent.h>
 
   #if _POSIX_MEMLOCK || _POSIX_MEMLOCK_RANGE || _POSIX_MAPPED_FILES
     #include <sys/mman.h>
@@ -160,10 +162,10 @@ static void eio_destroy (eio_req *req);
     #define D_TYPE(de) (de)->d_type
   #endif
 
-  #ifndef EIO_STRUCT_DIRENT
-    #define EIO_STRUCT_DIRENT struct dirent
-  #endif
+#endif
 
+#ifndef EIO_STRUCT_DIRENT
+  #define EIO_STRUCT_DIRENT struct dirent
 #endif
 
 #if HAVE_SENDFILE
@@ -1285,6 +1287,7 @@ eio__mtouch (eio_req *req)
   return 0;
 }
 
+#ifndef _WIN32
 /*****************************************************************************/
 /* requests implemented outside eio_execute, because they are so large */
 
@@ -1447,6 +1450,7 @@ eio__realpath (eio_req *req, etp_worker *self)
 done:
   req->ptr2 = realloc (req->ptr2, req->result); /* trade time for space savings */
 }
+#endif
 
 static signed char
 eio_dent_cmp (const eio_dirent *a, const eio_dirent *b)
@@ -1980,6 +1984,7 @@ eio_execute (etp_worker *self, eio_req *req)
       case EIO_FSTAT:     ALLOC (sizeof (EIO_STRUCT_STAT));
                           req->result = fstat     (req->int1, (EIO_STRUCT_STAT *)req->ptr2); break;
 
+#ifndef _WIN32
       case EIO_STATVFS:   ALLOC (sizeof (EIO_STRUCT_STATVFS));
                           req->result = statvfs   (req->ptr1, (EIO_STRUCT_STATVFS *)req->ptr2); break;
       case EIO_FSTATVFS:  ALLOC (sizeof (EIO_STRUCT_STATVFS));
@@ -1987,6 +1992,8 @@ eio_execute (etp_worker *self, eio_req *req)
 
       case EIO_CHOWN:     req->result = chown     (req->ptr1, req->int2, req->int3); break;
       case EIO_FCHOWN:    req->result = fchown    (req->int1, req->int2, req->int3); break;
+#endif
+
       case EIO_CHMOD:     req->result = chmod     (req->ptr1, (mode_t)req->int2); break;
       case EIO_FCHMOD:    req->result = fchmod    (req->int1, (mode_t)req->int2); break;
       case EIO_TRUNCATE:  req->result = truncate  (req->ptr1, req->offs); break;
@@ -2003,10 +2010,12 @@ eio_execute (etp_worker *self, eio_req *req)
       case EIO_SYMLINK:   req->result = symlink   (req->ptr1, req->ptr2); break;
       case EIO_MKNOD:     req->result = mknod     (req->ptr1, (mode_t)req->int2, (dev_t)req->offs); break;
 
+#ifndef _WIN32
       case EIO_REALPATH:  eio__realpath (req, self); break;
 
       case EIO_READLINK:  ALLOC (PATH_MAX);
                           req->result = readlink  (req->ptr1, req->ptr2, PATH_MAX); break;
+#endif
 
       case EIO_SYNC:      req->result = 0; sync (); break;
       case EIO_FSYNC:     req->result = fsync     (req->int1); break;

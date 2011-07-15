@@ -69,6 +69,8 @@ typedef int (*eio_cb)(eio_req *req);
 #ifdef _WIN32
 typedef int      eio_uid_t;
 typedef int      eio_gid_t;
+#define uid_t int
+#define gid_t int
 #else
 typedef uid_t    eio_uid_t;
 typedef gid_t    eio_gid_t;
