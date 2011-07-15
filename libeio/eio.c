@@ -879,10 +879,10 @@ int eio_poll (void)
 # define pread  eio__pread
 # define pwrite eio__pwrite
 
-static eio_ssize_t
+static ssize_t
 eio__pread (int fd, void *buf, size_t count, off_t offset)
 {
-  eio_ssize_t res;
+  ssize_t res;
   off_t ooffset;
 
   X_LOCK (preadwritelock);
@@ -895,10 +895,10 @@ eio__pread (int fd, void *buf, size_t count, off_t offset)
   return res;
 }
 
-static eio_ssize_t
+static ssize_t
 eio__pwrite (int fd, void *buf, size_t count, off_t offset)
 {
-  eio_ssize_t res;
+  ssize_t res;
   off_t ooffset;
 
   X_LOCK (preadwritelock);
@@ -997,7 +997,7 @@ eio__fallocate (int fd, int mode, off_t offset, size_t len)
 # undef readahead
 # define readahead(fd,offset,count) eio__readahead (fd, offset, count, self)
 
-static eio_ssize_t
+static ssize_t
 eio__readahead (int fd, off_t offset, size_t count, etp_worker *self)
 {
   size_t todo = count;
@@ -1019,11 +1019,11 @@ eio__readahead (int fd, off_t offset, size_t count, etp_worker *self)
 #endif
 
 /* sendfile always needs emulation */
-static eio_ssize_t
+static ssize_t
 eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
 {
-  eio_ssize_t written = 0;
-  eio_ssize_t res;
+  ssize_t written = 0;
+  ssize_t res;
 
   if (!count)
     return 0;
@@ -1142,7 +1142,7 @@ eio__sendfile (int ofd, int ifd, off_t offset, size_t count, etp_worker *self)
 
       while (count)
         {
-          eio_ssize_t cnt;
+          ssize_t cnt;
           
           cnt = pread (ifd, eio_buf, count > EIO_BUFSIZE ? EIO_BUFSIZE : count, offset);
 
@@ -1360,7 +1360,7 @@ eio__realpath (eio_req *req, etp_worker *self)
 
   while (*rel)
     {
-      eio_ssize_t len, linklen;
+      ssize_t len, linklen;
       char *beg = rel;
 
       while (*rel && *rel != '/')
@@ -2368,11 +2368,11 @@ eio_grp_add (eio_req *grp, eio_req *req)
 /*****************************************************************************/
 /* misc garbage */
 
-eio_ssize_t
+ssize_t
 eio_sendfile_sync (int ofd, int ifd, off_t offset, size_t count)
 {
   etp_worker wrk;
-  eio_ssize_t ret;
+  ssize_t ret;
 
   wrk.dbuf = 0;
 
