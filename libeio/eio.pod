@@ -47,21 +47,24 @@ time differences throughout libeio.
 
 =head2 FORK SUPPORT
 
-Calling C<fork ()> is fully supported by this module - but you must not
-rely on this. It is currently implemented in these steps:
+Usage of pthreads in a program changes the semantics of fork
+considerably. Specifically, only async-safe functions can be called after
+fork. Libeio uses pthreads, so this applies, and makes using fork hard for
+anything but relatively fork + exec uses.
 
-  1. wait till all requests in "execute" state have been handled
-     (basically requests that are already handed over to the kernel).
-  2. fork
-  3. in the parent, continue business as usual, done
-  4. in the child, destroy all ready and pending requests and free the
-     memory used by the worker threads. This gives you a fully empty
-     libeio queue.
+This library only works in the process that initialised it: Forking is
+fully supported, but using libeio in any other process than the one that
+called C<eio_init> is not.
 
-Note, however, since libeio does use threads, the above guarantee doesn't
-cover your libc, for example, malloc and other libc functions are not
-fork-safe, so there is very little you can do after a fork, and in fact,
-the above might crash, and thus change.
+You might get around by not I<using> libeio before (or after) forking in
+the parent, and using it in the child afterwards. You could also try to
+call the L<eio_init> function again in the child, which will brutally
+reinitialise all data structures, which isn't POSIX conformant, but
+typically works.
+
+Otherwise, the only recommendation you should follow is: treat fork code
+the same way you treat signal handlers, and only ever call C<eio_init> in
+the process that uses it, and only once ever.
 
 =head1 INITIALISATION/INTEGRATION
 
@@ -80,6 +83,9 @@ failure it returns C<-1> and sets C<errno> appropriately.
 
 It accepts two function pointers specifying callbacks as argument, both of
 which can be C<0>, in which case the callback isn't called.
+
+There is currently no way to change these callbacks later, or to
+"uninitialise" the library again.
 
 =item want_poll callback
 

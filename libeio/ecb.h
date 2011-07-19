@@ -63,6 +63,49 @@
   #endif
 #endif
 
+/*****************************************************************************/
+
+#ifndef ECB_MEMORY_FENCE
+  #if ECB_GCC_VERSION(2,5)
+    #if __x86
+      #define ECB_MEMORY_FENCE         __asm__ __volatile__ ("lock; or.b $0, -1(%%esp)" : : : "memory")
+      #define ECB_MEMORY_FENCE_ACQUIRE ECB_MEMORY_FENCE
+      #define ECB_MEMORY_FENCE_RELEASE ECB_MEMORY_FENCE /* better be safe than sorry */
+    #elif __amd64
+      #define ECB_MEMORY_FENCE         __asm__ __volatile__ ("mfence" : : : "memory")
+      #define ECB_MEMORY_FENCE_ACQUIRE __asm__ __volatile__ ("lfence" : : : "memory")
+      #define ECB_MEMORY_FENCE_RELEASE __asm__ __volatile__ ("sfence")
+    #endif
+  #endif
+#endif
+
+#ifndef ECB_MEMORY_FENCE
+  #if ECB_GCC_VERSION(4,4)
+    #define ECB_MEMORY_FENCE         __sync_synchronize ()
+    #define ECB_MEMORY_FENCE_ACQUIRE ({ char dummy = 0; __sync_lock_test_and_set (&dummy, 1); })
+    #define ECB_MEMORY_FENCE_RELEASE ({ char dummy = 1; __sync_lock_release      (&dummy   ); })
+  #elif _MSC_VER >= 1400
+    #define ECB_MEMORY_FENCE         do { } while (0)
+    #define ECB_MEMORY_FENCE_ACQUIRE ECB_MEMORY_FENCE
+    #define ECB_MEMORY_FENCE_RELEASE ECB_MEMORY_FENCE
+  #elif defined(_WIN32) && defined(MemoryBarrier)
+    #define ECB_MEMORY_FENCE         MemoryBarrier ()
+    #define ECB_MEMORY_FENCE_ACQUIRE ECB_MEMORY_FENCE
+    #define ECB_MEMORY_FENCE_RELEASE ECB_MEMORY_FENCE
+  #endif
+#endif
+
+#ifndef ECB_MEMORY_FENCE
+  #include <pthread.h>
+
+  static pthread_mutex_t ecb_mf_lock = PTHREAD_MUTEX_INITIALIZER;
+  #define ECB_MEMORY_FENCE do { pthread_mutex_lock (&ecb_mf_lock); pthread_mutex_unlock (&ecb_mf_lock); } while (0)
+  #define ECB_MEMORY_FENCE_ACQUIRE ECB_MEMORY_FENCE
+  #define ECB_MEMORY_FENCE_RELEASE ECB_MEMORY_FENCE
+#endif
+
+/*****************************************************************************/
+
 #define ECB_C99 (__STDC_VERSION__ >= 199901L)
 
 #if __cplusplus

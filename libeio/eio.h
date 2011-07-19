@@ -67,13 +67,23 @@ typedef int (*eio_cb)(eio_req *req);
 #endif
 
 #ifdef _WIN32
-typedef int      eio_uid_t;
-typedef int      eio_gid_t;
-#define uid_t int
-#define gid_t int
+  typedef int      eio_uid_t;
+  typedef int      eio_gid_t;
+  #ifdef __MINGW32__ /* no intptr_t */
+    typedef ssize_t  eio_ssize_t;
+  #else
+    typedef intptr_t eio_ssize_t; /* or SSIZE_T */
+  #endif
+  #if __GNUC__
+    typedef long long eio_ino_t;
+  #else
+    typedef __int64   eio_ino_t; /* unsigned not supported by msvc */
+  #endif
 #else
-typedef uid_t    eio_uid_t;
-typedef gid_t    eio_gid_t;
+  typedef uid_t    eio_uid_t;
+  typedef gid_t    eio_gid_t;
+  typedef ssize_t  eio_ssize_t;
+  typedef ino_t    eio_ino_t;
 #endif
 
 #ifndef EIO_STRUCT_STATVFS
@@ -122,7 +132,7 @@ struct eio_dirent
   unsigned short namelen; /* size of filename without trailing 0 */
   unsigned char type; /* one of EIO_DT_* */
   signed char score; /* internal use */
-  ino_t inode; /* the inode number, if available, otherwise unspecified */
+  eio_ino_t inode; /* the inode number, if available, otherwise unspecified */
 };
 
 /* eio_msync flags */
@@ -201,7 +211,7 @@ struct eio_req
 {
   eio_req volatile *next; /* private ETP */
 
-  ssize_t result;  /* result of syscall, e.g. result = read (... */
+  eio_ssize_t result;  /* result of syscall, e.g. result = read (... */
   off_t offs;      /* read, write, truncate, readahead, sync_file_range, fallocate: file offset, mknod: dev_t */
   size_t size;     /* read, write, readahead, sendfile, msync, mlock, sync_file_range, fallocate: length */
   void *ptr1;      /* all applicable requests: pathname, old name; readdir: optional eio_dirents */
@@ -297,13 +307,13 @@ eio_req *eio_fstatvfs  (int fd, int pri, eio_cb cb, void *data); /* stat buffer=
 eio_req *eio_futime    (int fd, eio_tstamp atime, eio_tstamp mtime, int pri, eio_cb cb, void *data);
 eio_req *eio_ftruncate (int fd, off_t offset, int pri, eio_cb cb, void *data);
 eio_req *eio_fchmod    (int fd, mode_t mode, int pri, eio_cb cb, void *data);
-eio_req *eio_fchown    (int fd, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data);
+eio_req *eio_fchown    (int fd, eio_uid_t uid, eio_gid_t gid, int pri, eio_cb cb, void *data);
 eio_req *eio_dup2      (int fd, int fd2, int pri, eio_cb cb, void *data);
 eio_req *eio_sendfile  (int out_fd, int in_fd, off_t in_offset, size_t length, int pri, eio_cb cb, void *data);
 eio_req *eio_open      (const char *path, int flags, mode_t mode, int pri, eio_cb cb, void *data);
 eio_req *eio_utime     (const char *path, eio_tstamp atime, eio_tstamp mtime, int pri, eio_cb cb, void *data);
 eio_req *eio_truncate  (const char *path, off_t offset, int pri, eio_cb cb, void *data);
-eio_req *eio_chown     (const char *path, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data);
+eio_req *eio_chown     (const char *path, eio_uid_t uid, eio_gid_t gid, int pri, eio_cb cb, void *data);
 eio_req *eio_chmod     (const char *path, mode_t mode, int pri, eio_cb cb, void *data);
 eio_req *eio_mkdir     (const char *path, mode_t mode, int pri, eio_cb cb, void *data);
 eio_req *eio_readdir   (const char *path, int flags, int pri, eio_cb cb, void *data); /* result=ptr2 allocated dynamically */
@@ -351,7 +361,7 @@ void eio_cancel (eio_req *req);
 /*****************************************************************************/
 /* convenience functions */
 
-ssize_t eio_sendfile_sync (int ofd, int ifd, off_t offset, size_t count);
+eio_ssize_t eio_sendfile_sync (int ofd, int ifd, off_t offset, size_t count);
 
 #ifdef __cplusplus
 }
