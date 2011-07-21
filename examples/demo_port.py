@@ -145,7 +145,7 @@ def res_cb(req):
 #  return 0;
 #}
 def stat_callback(stat_info):
-    print 'py stat_cb', stat_callback
+    print 'py stat_cb', stat_info
     
 #
 #int
