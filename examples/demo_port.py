@@ -13,7 +13,9 @@ def print_stats():
 import os
 import sys
 import stat
+import time
 import select
+
 ##include <stdio.h>
 ##include <stdlib.h>
 ##include <unistd.h>
@@ -63,20 +65,29 @@ def event_loop():
 #  pfd.fd     = respipe [0];
 #  pfd.events = POLLIN;
 #
-    p = select.poll()
-    p.register(respipe[0], select.POLLIN)
+    try:
+        p = select.poll()
+        p.register(respipe[0], select.POLLIN)
 #  printf ("\nentering event loop\n");
     #print 'entering event loop'
 #  while (eio_nreqs ())
-    while eio.nreqs():
+        while eio.nreqs():
 #    {
 #      poll (&pfd, 1, -1);
-        sys.stdout.write('.')
-        sys.stdout.flush()
-        p.poll(1000)
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            p.poll(1000)
 #      printf ("eio_poll () = %d\n", eio_poll ());
         #print 'eio_poll () = %d' % eio.poll()
-        eio.poll()
+            eio.poll()
+    except AttributeError:
+        # no poll, stupidily wait 500ms
+        time.sleep(0.5)
+        while eio.nreqs():
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            eio.poll()
+
 #    }
 #  printf ("leaving event loop\n");
     #print 'leaving event loop'
@@ -216,11 +227,12 @@ if __name__ == '__main__':
 #      eio_futime (last_fd, 92345.678, 93456.789, 0, res_cb, "futime");
     eio.futime(last_fd, 92345.678, 93456.789)
 #      eio_chown ("eio-test-dir", getuid (), getgid (), 0, res_cb, "chown");
-    eio.chown('eio-test-dir', os.getuid(), os.getgid())
+    if hasattr(os, 'getuid'):
+        eio.chown('eio-test-dir', os.getuid(), os.getgid())
 #      eio_fchown (last_fd, getuid (), getgid (), 0, res_cb, "fchown");
-    eio.fchown(last_fd, os.getuid(), os.getgid())
+        eio.fchown(last_fd, os.getuid(), os.getgid())
 #      eio_fchmod (last_fd, 0723, 0, res_cb, "fchmod");
-    eio.fchmod(last_fd, 0723, 0)
+        eio.fchmod(last_fd, 0723, 0)
 #      eio_readdir ("eio-test-dir", 0, 0, readdir_cb, "readdir");
 #      eio_readdir ("/nonexistant", 0, 0, readdir_cb, "readdir");
 #      eio_fstat (last_fd, 0, stat_cb, "stat");

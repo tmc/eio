@@ -1,12 +1,12 @@
 #### types.h
-cdef extern from "sys/types.h" nogil:
+cdef extern from * nogil:
     ctypedef int pid_t
     ctypedef int dev_t
     ctypedef int ino_t
     ctypedef int mode_t
     ctypedef int nlink_t
-    ctypedef int uid_t
-    ctypedef int gid_t
+    #ctypedef int uid_t
+    #ctypedef int gid_t
     ctypedef int dev_t
     ctypedef int off_t
     ctypedef int blksize_t
@@ -22,19 +22,19 @@ cdef extern from "sys/stat.h" nogil:
         dev_t     st_dev     # ID of device containing file
         ino_t     st_ino     # inode number
         mode_t    st_mode    # protection
-        nlink_t   st_nlink   # number of hard links
-        uid_t     st_uid     # user ID of owner
-        gid_t     st_gid     # group ID of owner
+        int   st_nlink   # number of hard links
+        int     st_uid     # user ID of owner
+        int     st_gid     # group ID of owner
         dev_t     st_rdev    # device ID (if special file)
         off_t     st_size    # total size, in bytes
-        blksize_t st_blksize # blocksize for filesystem I/O
-        blkcnt_t  st_blocks  # number of blocks allocated
+        #blksize_t st_blksize # blocksize for filesystem I/O # not on win32
+        #blkcnt_t  st_blocks  # number of blocks allocated   # not on win32
         time_t    st_atime   # time of last access
         time_t    st_mtime   # time of last modification
         time_t    st_ctime   # time of last status change
 
-#### statvfs.h
-cdef extern from "sys/statvfs.h" nogil:
+#### statvfs.h (but use eio.c's stuff for win compat)
+cdef extern from * nogil:
     struct statvfs_t "statvfs":
       unsigned long  f_bsize    # file system block size
       unsigned long  f_frsize   # fragment size
@@ -106,6 +106,9 @@ cdef extern from "libeio/eio.c":
     enum: EIO_NOP
     enum: EIO_BUSY
 
+    ctypedef int eio_uid_t
+    ctypedef int eio_gid_t
+
     cdef struct eio_dirent
     cdef struct eio_req
     ctypedef double eio_tstamp
@@ -161,13 +164,13 @@ cdef extern from "libeio/eio.c" nogil:
     eio_req *eio_futime    (int fd, eio_tstamp atime, eio_tstamp mtime, int pri, eio_cb cb, void *data)
     eio_req *eio_ftruncate (int fd, off_t offset, int pri, eio_cb cb, void *data)
     eio_req *eio_fchmod    (int fd, mode_t mode, int pri, eio_cb cb, void *data)
-    eio_req *eio_fchown    (int fd, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
+    eio_req *eio_fchown    (int fd, eio_uid_t uid, eio_gid_t gid, int pri, eio_cb cb, void *data)
     eio_req *eio_dup2      (int fd, int fd2, int pri, eio_cb cb, void *data)
     eio_req *eio_sendfile  (int out_fd, int in_fd, off_t in_offset, size_t length, int pri, eio_cb cb, void *data)
     eio_req *eio_open      (char *path, int flags, mode_t mode, int pri, eio_cb cb, void *data)
     eio_req *eio_utime     (char *path, eio_tstamp atime, eio_tstamp mtime, int pri, eio_cb cb, void *data)
     eio_req *eio_truncate  (char *path, off_t offset, int pri, eio_cb cb, void *data)
-    eio_req *eio_chown     (char *path, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
+    eio_req *eio_chown     (char *path, eio_uid_t uid, eio_gid_t gid, int pri, eio_cb cb, void *data)
     eio_req *eio_chmod     (char *path, mode_t mode, int pri, eio_cb cb, void *data)
     eio_req *eio_mkdir     (char *path, mode_t mode, int pri, eio_cb cb, void *data)
     eio_req *eio_readdir   (char *path, int flags, int pri, eio_cb cb, void *data) # result=ptr2 allocated dynamically

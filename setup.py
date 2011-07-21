@@ -13,9 +13,11 @@ except:
 
 def get_ext_modules():
     if not cython_available:
-        eio_extension = Extension('eio', ['eio.c'])
+        print 'nocy'
+        eio_extension = Extension('eio', ['eio.c'], libraries=['pthread'])
     else:
-        eio_extension = Extension('eio', ['eio.pyx'])
+        print 'cy'
+        eio_extension = Extension('eio', ['eio.pyx'], libraries=['pthread'])
 
     eio_extension.configure = configure_eio
     return [eio_extension]
@@ -34,6 +36,7 @@ class my_build_ext(build_ext):
     def build_extension(self, ext):
         if getattr(ext, 'configure', None):
             ext.configure()
+        self.compiler.dll_libraries = [] # remove msvcr dll for mingw compilation
         return build_ext.build_extension(self, ext)
 
 __version__ = (0, 0, 1, 'a')

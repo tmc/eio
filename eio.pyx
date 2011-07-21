@@ -76,12 +76,7 @@ cdef class stat_result:
     property st_size:
         def __get__(self):
             return self._statptr.st_size
-    property st_blksize:
-        def __get__(self):
-            return self._statptr.st_blksize
-    property st_blocks:
-        def __get__(self):
-            return self._statptr.st_blocks
+
     property st_atime:
         def __get__(self):
             return self._statptr.st_atime
@@ -201,7 +196,7 @@ def truncate(char *path, off_t offset, callback=None):
     return eio_req_from_ptr(r)
 
 #eio_chown (const char *path, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
-def chown(char *path, uid_t uid, gid_t gid, callback=None):
+def chown(char *path, eio_uid_t uid, eio_gid_t gid, callback=None):
     cdef eio_req *r
     with nogil:
         r = eio_chown(path, uid, gid, EIO_PRI_DEFAULT, result_callback, <void *>callback)
@@ -327,7 +322,7 @@ def fchmod(int fd, mode_t mode, callback=None):
     return eio_req_from_ptr(r)
 
 #eio_fchown (int fd, uid_t uid, gid_t gid, int pri, eio_cb cb, void *data)
-def fchown(int fd, uid_t uid, gid_t gid, callback=None):
+def fchown(int fd, eio_uid_t uid, eio_gid_t gid, callback=None):
     cdef eio_req *r
     with nogil:
         r = eio_fchown(fd, uid, gid, EIO_PRI_DEFAULT, result_callback, <void *>callback)
