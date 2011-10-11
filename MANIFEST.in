@@ -1,0 +1,4 @@
+include README.rst
+include eio.c
+recursive-include examples *py
+recursive-include libeio *
