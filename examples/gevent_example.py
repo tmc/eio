@@ -60,16 +60,18 @@ if __name__ == '__main__':
     num_megs = 50
     use_eio = False
 
-
     if len(sys.argv) > 1:
-        num_megs = int(sys.argv[1])
+        use_eio = sys.argv[1] == 'eio'
         if len(sys.argv) > 2:
-            use_eio = sys.argv[2] == 'eio'
+            try:
+                num_megs = int(sys.argv[2])
+            except ValueError:
+                pass
 
     if use_eio:
         print 'using eio calls'
     else:
-        print 'using traditional stdlib os calls'
+        print 'using traditional stdlib os calls, run as `%s eio` to use eio calls' % sys.argv[0]
 
     gevent.spawn(show_nonblocking)
     gevent.spawn(poll_eio)
