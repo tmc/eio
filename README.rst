@@ -11,4 +11,4 @@ Currently requires Cython to build.
 
 Windows support through MinGW is.. partial.
 
-gevent and evenlet wrappers planned.
+gevent and eventlet wrappers planned.
